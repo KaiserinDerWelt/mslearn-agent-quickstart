@@ -12,9 +12,8 @@ from typing import List, Dict, Any
 from dotenv import load_dotenv
 
 # Import Azure Identity and OpenAI client libraries
-
-
-
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+from openai import OpenAI
 
 # Load environment variables
 load_dotenv()
@@ -31,9 +30,14 @@ class AgentClient:
             raise ValueError("AGENT_ENDPOINT not found in environment variables")
         
         # Create OpenAI client authenticated with Azure credentials 
-
-
-
+        self.client = OpenAI(
+            api_key=get_bearer_token_provider(
+                DefaultAzureCredential(), 
+                "https://ai.azure.com/.default"
+            ),
+            base_url=self.agent_endpoint,
+            default_query={"api-version": "2025-11-15-preview"}
+        )
         
         # Maintain conversation history (last 3 exchanges)
         self.conversation_history: List[Dict[str, Any]] = []
@@ -58,27 +62,27 @@ class AgentClient:
         try:
             # Initialize assistant message variable
             assistant_message = ""
-
-
-
-            # Send prompt with full conversation history and get response
-
-
-
             
-            # Add assistant response to conversationhistory
+            # Send prompt with full conversation history and get response
+            response = self.client.responses.create(
+                input=self.conversation_history
+            )
+            assistant_message = response.output_text
+            
+            # Add assistant response to conversation history
             self.conversation_history.append({
                 "role": "assistant",
                 "content": assistant_message
             })
             
             # Count user messages in history to enforce max_history limit
-            user_message_count = sum(1 for msg in self.conversation_history 
-                                    if isinstance(msg, dict) and msg.get("role") == "user")
+            user_message_count = sum(
+                1 for msg in self.conversation_history 
+                if isinstance(msg, dict) and msg.get("role") == "user"
+            )
             
             # Remove oldest exchanges if we have more than max_history
             while user_message_count > self.max_history:
-                # Find and remove the first user message and its assistant response
                 for i, msg in enumerate(self.conversation_history):
                     if isinstance(msg, dict) and msg.get("role") == "user":
                         self.conversation_history.pop(i)
